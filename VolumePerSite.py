@@ -10,17 +10,16 @@
 # Program Variable Name       Display Name              Data type                       Type      Direction ObtainedFrom    Filter
 # arcpy.GetParameterAsText(0) outFGDB                   Workspace or Feature Dataset    Required  Input
 # arcpy.GetParameterAsText(1) inFolder                  Folder                          Required  Input
-# arcpy.GetParameterAsText(2) Minimum Surface(GRID)     Raster Dataset          Required  Input
-# arcpy.GetParameterAsText(3) Channel Boundary          Feature Class           Required  Input
-# arcpy.GetParameterAsText(4) Eddy Boundary         Feature Class           Required  Input
-# arcpy.GetParameterAsText(5) StageLUTable          Table               Required  Input
-# arcpy.GetParameterAsText(6) Aggregation Distance  Double                  Required  Input
-# arcpy.GetParameterAsText(7) Stage                 Field               Required  Input     StageLUTable    Field(double)
-# arcpy.GetParameterAsText(8) Site                  String              Required  Input                     Value List
-# arcpy.GetParameterAsText(9) Bin Size                  Double              Required  Input                     Value List
-# arcpy.GetParameterAsText(10) Delete Points?       Boolean             Required  Input
-# arcpy.GetParameterAsText(11) Delete AggBoundary?  Boolean             Required  Input
-
+# arcpy.GetParameterAsText(2) Minimum Surface(GRID)     Raster Dataset      Required  Input
+# arcpy.GetParameterAsText(3) Channel Boundary        Feature Class     Required  Input
+# arcpy.GetParameterAsText(4) Eddy Boundary       Feature Class     Required  Input
+# arcpy.GetParameterAsText(5) StageLUTable          Table       Required  Input
+# arcpy.GetParameterAsText(6) Aggregation Distance  Double              Required  Input
+# arcpy.GetParameterAsText(7) Stage               Field       Required  Input     StageLUTable    Field(double)
+# arcpy.GetParameterAsText(8) Site                String        Required  Input                     Value List
+# arcpy.GetParameterAsText(9) Bin Size                Double        Required  Input                     Value List
+# arcpy.GetParameterAsText(10) Delete Points?   Boolean       Required  Input
+# arcpy.GetParameterAsText(11) Delete AggBoundary?  Boolean       Required  Input
 
 def tryint(s):
     try:
@@ -113,6 +112,7 @@ def calcVolume(inBoundary, volFilename, wsl, inTIN, fltBinSize, blnAboveWSL):
     
 
 import sys
+from os import path
 import re
 import string
 import os
@@ -189,35 +189,43 @@ blnDeletePointFC = arcpy.GetParameterAsText(10)
 blnDeleteAggBoundary = arcpy.GetParameterAsText(11)
 
 fltBinSize = float(binSize)
-fld1 = "Site"
-fld2 = inStage
-fld3 = "wsl25k"
-Stage = fld2[3:]
-# arcpy.AddMessage("Input Table = " + str(wsl8kTable))
-# arcpy.AddMessage("Input Minimum Surface = " + str(minSurface))
 # Check if table has Site Field and at least wsl8k field!!!!!!!!!!!!!!!!!!
 
-try:
-    queryString = '"' + fld1 + '" = ' + "'" + inSite + "'"
-    # arcpy.AddMessage("Expression = " + str(queryString))
+theSite = None
+wsl_8k = None
+wsl_25k = None
 
-    # The fields are "Site" and "wsl#k" (where # is Stage)
-    with arcpy.da.SearchCursor(wslTable, (fld1,fld2,fld3), queryString) as cursor:
-        for row in cursor:
-            theSite = row[0]
-            wsl_8k = row[1]
-            wsl_25k = row[2]
-            # arcpy.AddMessage("Cursor row[0] is = " + str(theSite))
-            # arcpy.AddMessage("Cursor row[1] is = " + str(wsl_8k))
-            # arcpy.AddMessage("Cursor row[2] is = " + str(wsl_25k))
-            # arcpy.AddMessage("Site " + str(inSite) + " Water Surface Elevation at " + str(Stage) + " = " + str(wsl_8k))
-            # arcpy.AddMessage(" ")
-             
+scriptPath = os.path.dirname(os.path.realpath(__file__))
+StageDischargePath = os.path.join(scriptPath, 'LookupTables', 'StageDischarge.csv')
+arcpy.AddMessage("Path to script {}".format(StageDischargePath))
+
+arcpy.AddMessage("Looking for site in CSV file {}".format(inSite))
+try: 
+    with open(StageDischargePath, 'r') as f:
+        records = csv.DictReader(f)
+        for row in records:
+            if row['Site'] == inSite:
+                arcpy.AddMessage("Found")
+                theSite = row['Site']
+                wsl_8k = row['wsl8k']
+                wsl_25k = row['wsl25k']
 except:
-    print arcpy.GetMessages()
+    arcpy.AddMessage("ERROR Reading {}".format(StageDischargePath))
 
-#arcpy.AddMessage("WSL8K = " + str(wsl_8k) + ", WSL25K = " + str(wsl_25k))
-#arcpy.AddMessage(" ")
+if theSite is None:
+    arcpy.AddMessage("ERROR: Site Not Found")
+    print arcpy.GetMessages()
+    sys.exit()
+if wsl_8k is None:
+    arcpy.AddMessage("ERROR: wsl_8k Not Found")
+    print arcpy.GetMessages()
+    sys.exit()
+if wsl_25k is None:
+    arcpy.AddMessage("ERROR: wsl_25k Not Found")
+    print arcpy.GetMessages()
+    sys.exit()
+arcpy.AddMessage("Continuing for site: {} with wsl_8k: {} and wsl_25k: {}".format(theSite, wsl_8k, wsl_25k))
+print arcpy.GetMessages()
 
 decAggDist = float(aggDist)
 
