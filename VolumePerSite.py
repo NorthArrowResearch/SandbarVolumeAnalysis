@@ -21,6 +21,8 @@
 # arcpy.GetParameterAsText(10) Delete Points?   Boolean       Required  Input
 # arcpy.GetParameterAsText(11) Delete AggBoundary?  Boolean       Required  Input
 
+logBuffer = []
+
 def tryint(s):
     try:
         return int(s)
@@ -49,6 +51,17 @@ def twodigityr_fourdigityr(inYr, nowYr):
         # Site YR is <=  Current YR so add 2000
         return (int(inYr) + 2000)
 
+def logger(msg):
+    arcpy.AddMessage(msg)
+    logBuffer.append(msg)
+
+def emptyLogBuffer():
+    print arcpy.GetMessages()
+    # Append logs to log file
+    with open(logFile, "a") as logfile:
+        for log in logBuffer:
+            logfile.write(log)
+
 def calcVolume(inBoundary, volFilename, wsl, inTIN, fltBinSize, blnAboveWSL):
 
     field1 = "Z_MAX"
@@ -61,13 +74,13 @@ def calcVolume(inBoundary, volFilename, wsl, inTIN, fltBinSize, blnAboveWSL):
             for row in cursor:
                 ZmaxTIN = row[0]
                 ZminTIN = row[1]
-                #arcpy.AddMessage("TIN Z_MAX = " + str(ZmaxTIN))
-                #arcpy.AddMessage("TIN Z_MIN = " + str(ZminTIN))
-                arcpy.AddMessage(" ")
+                #logger("TIN Z_MAX = " + str(ZmaxTIN))
+                #logger("TIN Z_MIN = " + str(ZminTIN))
+                logger(" ")
                 
                 if ((ZmaxTIN <= 0) or (ZminTIN <= 0)):
-                    arcpy.AddMessage("Cannot get boundary values from " + inBoundary + ". Skipping volume calculation!")
-                    arcpy.AddMessage("")
+                    logger("Cannot get boundary values from " + inBoundary + ". Skipping volume calculation!")
+                    logger("")
                     return False
                 else:
                     processVol = True
@@ -80,20 +93,20 @@ def calcVolume(inBoundary, volFilename, wsl, inTIN, fltBinSize, blnAboveWSL):
             numBinsAboveWSL = (ZmaxTIN - wsl) / (fltBinSize)
             numHiBins = math.ceil(numBinsAboveWSL)           
             ceilingZ = (wsl + ((numHiBins + 1) * fltBinSize))
-            #arcpy.AddMessage("Ceiling Z = " + str(ceilingZ))
+            #logger("Ceiling Z = " + str(ceilingZ))
 
             if (blnAboveWSL == True):
                 zCurrent = round(wsl, 2)
-                # arcpy.AddMessage("Start Elevation = water surface level = " + str(zCurrent))
+                # logger("Start Elevation = water surface level = " + str(zCurrent))
             else:
                 zCurrent = baseZ
-                # arcpy.AddMessage("Start Elevation = " + str(zCurrent))
+                # logger("Start Elevation = " + str(zCurrent))
             
-            # arcpy.AddMessage("WSL Elevation = " + str(wsl))
-            # arcpy.AddMessage("Number of Bins below 8k wsl = " + str(numLoBins))
-            # arcpy.AddMessage("Number of Bins above 8k wsl = " + str(numHiBins))
-            # arcpy.AddMessage("Base Elevation = " + str(baseZ))
-            # arcpy.AddMessage("Ceiling Elevation = " + str(ceilingZ))
+            # logger("WSL Elevation = " + str(wsl))
+            # logger("Number of Bins below 8k wsl = " + str(numLoBins))
+            # logger("Number of Bins above 8k wsl = " + str(numHiBins))
+            # logger("Base Elevation = " + str(baseZ))
+            # logger("Ceiling Elevation = " + str(ceilingZ))
     
             loopcount = 0
     
@@ -103,12 +116,12 @@ def calcVolume(inBoundary, volFilename, wsl, inTIN, fltBinSize, blnAboveWSL):
                 loopcount = loopcount + 1
                 zCurrent = zCurrent + fltBinSize
 
-            arcpy.AddMessage("Wrote " + str(loopcount) + "  volume calculation iterations to " + volFilename)
-            arcpy.AddMessage(" ")
+            logger("Wrote " + str(loopcount) + "  volume calculation iterations to " + volFilename)
+            logger(" ")
             return True
             
     except:
-        print arcpy.GetMessages()
+        emptyLogBuffer()
     
 
 import sys
@@ -140,8 +153,8 @@ spatialRef = arcpy.SpatialReference(prjFile)
 # Set the environment output Coordinate System
 arcpy.env.outputCoordinateSystem = spatialRef
 
-# arcpy.AddMessage("Set Output Spatial Reference to NAD 1983 (2011) StatePlane Arizona Central FIPS 0202 (Meters)")
-arcpy.AddMessage("")
+# logger("Set Output Spatial Reference to NAD 1983 (2011) StatePlane Arizona Central FIPS 0202 (Meters)")
+logger("")
 
 # Turn on history logging so that a history log file is written
 arcpy.LogHistory = True
@@ -161,9 +174,9 @@ count = int(0)
 blnDelauny = bool(1)
 processVol = False
 cur4digitYR = datetime.date.today().year
-# arcpy.AddMessage("Current 4 digit Year = " + str(cur4digitYR))
+# logger("Current 4 digit Year = " + str(cur4digitYR))
 cur2digitYR = str(cur4digitYR)[2:4]
-# arcpy.AddMessage("Current 2 Digit Year = " + str(cur2digitYR))
+# logger("Current 2 Digit Year = " + str(cur2digitYR))
 
 # create empty FC output list for deleting temp point FC's
 outPointFCList = []
@@ -195,37 +208,43 @@ theSite = None
 wsl_8k = None
 wsl_25k = None
 
+outFGBDir = os.path.dirname(outFGDB)
+logFile = os.path.join(outFGBDir, 'results.log');
+logger("Logfile: {}".format(logFile));
+# Clear out the file
+open(logFile, 'w').close()
+
+
 scriptPath = os.path.dirname(os.path.realpath(__file__))
 StageDischargePath = os.path.join(scriptPath, 'LookupTables', 'StageDischarge.csv')
-arcpy.AddMessage("Path to script {}".format(StageDischargePath))
+logger("Path to script {}".format(StageDischargePath))
 
-arcpy.AddMessage("Looking for site in CSV file {}".format(inSite))
+logger("Looking for site in CSV file {}".format(inSite))
 try: 
     with open(StageDischargePath, 'r') as f:
         records = csv.DictReader(f)
         for row in records:
             if row['Site'] == inSite:
-                arcpy.AddMessage("Found")
                 theSite = row['Site']
                 wsl_8k = row['wsl8k']
                 wsl_25k = row['wsl25k']
 except:
-    arcpy.AddMessage("ERROR Reading {}".format(StageDischargePath))
+    logger("ERROR Reading {}".format(StageDischargePath))
 
 if theSite is None:
-    arcpy.AddMessage("ERROR: Site Not Found")
-    print arcpy.GetMessages()
+    logger("ERROR: Site Not Found")
+    emptyLogBuffer()
     sys.exit()
 if wsl_8k is None:
-    arcpy.AddMessage("ERROR: wsl_8k Not Found")
-    print arcpy.GetMessages()
+    logger("ERROR: wsl_8k Not Found")
+    emptyLogBuffer()
     sys.exit()
 if wsl_25k is None:
-    arcpy.AddMessage("ERROR: wsl_25k Not Found")
-    print arcpy.GetMessages()
+    logger("ERROR: wsl_25k Not Found")
+    emptyLogBuffer()
     sys.exit()
-arcpy.AddMessage("Continuing for site: {} with wsl_8k: {} and wsl_25k: {}".format(theSite, wsl_8k, wsl_25k))
-print arcpy.GetMessages()
+logger("Continuing for site: {} with wsl_8k: {} and wsl_25k: {}".format(theSite, wsl_8k, wsl_25k))
+emptyLogBuffer()
 
 decAggDist = float(aggDist)
 
@@ -235,13 +254,13 @@ arcpy.env.Workspace = inFolder.replace("\\","/")
 # Flip slash on output fgdb, and create output FGDB Path
 out_fgdb = str(outFGDB).replace("\\","/")
 outFGDBPath = out_fgdb + "/"
-# arcpy.AddMessage("Output FGDB is: " + out_fgdb)
-# arcpy.AddMessage("")
+# logger("Output FGDB is: " + out_fgdb)
+# logger("")
 
 # Get the Root directory of the Output FGDB 
 outRoot = os.path.split(outFGDB)[0]
-# arcpy.AddMessage("Output Root Folder is: " + str(outRoot))
-# arcpy.AddMessage("")
+# logger("Output Root Folder is: " + str(outRoot))
+# logger("")
 
 # Create an output Root Path (for TINS)
 out_path = str(outRoot).replace("\\","/")
@@ -268,23 +287,23 @@ boundaryFCList.append(minEddyBndy)
 
 # Flip slash on minimum surface
 minSurf = minSurface.replace("\\","/")
-# arcpy.AddMessage("MIN SURFACE path is " + minSurf)
-# arcpy.AddMessage("")
+# logger("MIN SURFACE path is " + minSurf)
+# logger("")
 
 # Get name of min surface
 inSurfName = os.path.split(minSurf)[1]
-# arcpy.AddMessage("Name Only of minimum surface is " + str(inSurfName))
+# logger("Name Only of minimum surface is " + str(inSurfName))
 
 surfSplit = re.split("\_", inSurfName)
-#arcpy.AddMessage("Split on all underscores of minimum surface name is " + str(surfSplit))
+#logger("Split on all underscores of minimum surface name is " + str(surfSplit))
 
 # Get start date
 startDateRaw = surfSplit[1]
-# arcpy.AddMessage("Split1 is " + str(startDateRaw))
+# logger("Split1 is " + str(startDateRaw))
   
 # Get end date
 endDateRaw = surfSplit[2]
-# arcpy.AddMessage("Split2 is " + str(endDateRaw))
+# logger("Split2 is " + str(endDateRaw))
 
 # Pick off Start 2 digit yr and mth
 yrStart2digits = startDateRaw[:2]
@@ -296,15 +315,15 @@ endMth = endDateRaw[2:4]
 
 # Convert start yr to 4 digits
 startYR4digits = twodigityr_fourdigityr(yrStart2digits, cur2digitYR)
-# arcpy.AddMessage("After subroutine, 4 digit start year is = " + str(startYR4digits))
+# logger("After subroutine, 4 digit start year is = " + str(startYR4digits))
 
 # Convert end yr to 4 digits
 endYR4digits = twodigityr_fourdigityr(yrEnd2digits, cur2digitYR)
-# arcpy.AddMessage("After subroutine, 4 digit end year is = " + str(endYR4digits))
+# logger("After subroutine, 4 digit end year is = " + str(endYR4digits))
 
 # Build date range
 minSurfDateRange = str(startMth) + "_" + str(startYR4digits) + "_" + str(endMth) + "_" + str(endYR4digits)
-# arcpy.AddMessage("Date Range = " + str(minSurfDateRange))
+# logger("Date Range = " + str(minSurfDateRange))
 
 #CalculateStatistics_management (in_raster_dataset, {x_skip_factor},
 #    {y_skip_factor}, {ignore_values}, {skip_existing}, {area_of_interest})
@@ -318,32 +337,32 @@ propResult = arcpy.GetRasterProperties_management(minSurf, InPropertyType)
 zMinSurfMin = propResult.getOutput(0)
 # zMinSurfMin = long(zMinSurfMin)
 zMinSurfMin = float(zMinSurfMin)
-arcpy.AddMessage("MIN SURFACE Zmin value = " + str(zMinSurfMin))
-arcpy.AddMessage(" ")
+logger("MIN SURFACE Zmin value = " + str(zMinSurfMin))
+logger(" ")
 
 # CreateFeatureclass_management (out_path, out_name, {geometry_type}, {template}, {has_m}, {has_z},
 #   {spatial_reference}, {config_keyword}, {spatial_grid_1}, {spatial_grid_2}, {spatial_grid_3})
 # arcpy.CreateFeatureclass_management(out_fgdb, outMinSurfPoints, "POINT", "", "DISABLED", "ENABLED", spatialRef)
-# arcpy.AddMessage("Created FeatureClass " + str(outMinSurfPointsFull))
+# logger("Created FeatureClass " + str(outMinSurfPointsFull))
 
 # Create Points from min_grid
 outTempPoints = outFGDBPath + ("temp" + inSite.lower())
 # arcpy.RasterToPoint_conversion (in_raster, out_point_features, {raster_field})
 arcpy.RasterToPoint_conversion (minSurf, outTempPoints)
-# arcpy.AddMessage("Converted Raster to Points")
+# logger("Converted Raster to Points")
 
 #Calculate the XY Coordinates
 arcpy.AddXY_management(outTempPoints)
-#arcpy.AddMessage("Added and Calculated XY Fields to Temp Points")
+#logger("Added and Calculated XY Fields to Temp Points")
 
 # Add a POINT_Z field
 arcpy.AddField_management(outTempPoints, "POINT_Z", "DOUBLE", "", "", "", "", "NULLABLE")
-# arcpy.AddMessage("Added Z Field to Temp Points")
+# logger("Added Z Field to Temp Points")
 
 # Calculate the POINT_Z field from the grid_code
 # arcpy.CalculateField_management (in_table, field, expression, {expression_type}, {code_block})
 arcpy.CalculateField_management(outTempPoints, "POINT_Z", "!grid_code!", "PYTHON_9.3")
-# arcpy.AddMessage("Calculated Z Field = grid_code")
+# logger("Calculated Z Field = grid_code")
 
 # Create Numpy Array to hold data for output a Z-Enabled Point Feature Class
 # array = arcpy.da.FeatureClassToNumPyArray(outTempPoints,["OID@", "SHAPE@X", "SHAPE@Y", "POINT_Z"], spatial_reference=spatialRef)
@@ -356,8 +375,8 @@ outMinSurfPointsFull = outFGDBPath + outMinSurfPoints
 # Delete old min surface points if it exists
 if arcpy.Exists(outMinSurfPointsFull):
     arcpy.Delete_management(outMinSurfPointsFull)
-    # arcpy.AddMessage("Deleted Existing " + str(outMinSurfPointsFull))
-    # arcpy.AddMessage("")
+    # logger("Deleted Existing " + str(outMinSurfPointsFull))
+    # logger("")
 
 # Create a feature class with x,y,z fields
 arcpy.da.NumPyArrayToFeatureClass(array, outMinSurfPointsFull, ("POINT_X", "POINT_Y", "POINT_Z"), spatialRef)
@@ -372,18 +391,18 @@ expr = "round(!POINT_Y!, 3)"
 arcpy.CalculateField_management(outMinSurfPointsFull, "POINT_Y", expr, "PYTHON")
 expr = "round(!POINT_X!, 3)"
 arcpy.CalculateField_management(outMinSurfPointsFull, "POINT_X", expr, "PYTHON")
-arcpy.AddMessage("Rounded X,Y,Z fields")
+logger("Rounded X,Y,Z fields")
 
-#arcpy.AddMessage("Created minsurface points " + str(outMinSurfPointsFull))
-#arcpy.AddMessage(" ")
+#logger("Created minsurface points " + str(outMinSurfPointsFull))
+#logger(" ")
 
 # Create Aggregate Boundary Output File Name for the minsurface
 outAggFC = outMinSurfPointsFull + "_boundary"
 
 # Execute Aggregate Points Method
 arcpy.AggregatePoints_cartography(outMinSurfPointsFull, outAggFC, decAggDist)
-# arcpy.AddMessage("Created Output Aggregate Boundary " + outAggFC)
-# arcpy.AddMessage("")
+# logger("Created Output Aggregate Boundary " + outAggFC)
+# logger("")
 
 # Append the AggPoint FC name to the delete list
 # aggPointFCList.append(outAggFC)
@@ -397,29 +416,29 @@ arcpy.CheckOutExtension("3D")
 
 # Create TIN Name
 # outTinName = "minsurf" + inSite
-# arcpy.AddMessage("TIN name not lowercase = " + str(outTinName))
+# logger("TIN name not lowercase = " + str(outTinName))
 outMinTinName = "minsurf_" + inSite.lower() + "_" + minSurfDateRange
 outMinTinNameFull = (outPath + outMinTinName)
-#arcpy.AddMessage("TIN name lowercase = " + str(outTinNameFull))
+#logger("TIN name lowercase = " + str(outTinNameFull))
 
 if arcpy.Exists(outMinTinNameFull):
     arcpy.Delete_management(outMinTinNameFull)
-    arcpy.AddMessage("Deleted Existing " + str(outMinTinNameFull))
-    arcpy.AddMessage("")
+    logger("Deleted Existing " + str(outMinTinNameFull))
+    logger("")
 
 
-arcpy.AddMessage("Creating minimum surface TIN ...")
+logger("Creating minimum surface TIN ...")
 
 # arcpy.CreateTin_3d (out_tin, {spatial_reference, {in_features}, {constrained_delaunay})
 # arcpy.CreateTin_3d(outMinTinNameFull, spatialRef, str(outTempPoints)+ " Shape.Z masspoints", False)
 arcpy.CreateTin_3d(outMinTinNameFull, spatialRef, str(outTempPoints)+ " grid_code", False)
-arcpy.AddMessage("Finished minimum surface TIN creation")
-arcpy.AddMessage(" ")
+logger("Finished minimum surface TIN creation")
+logger(" ")
 
 # Clip the min surface TIN to Aggregation Boundary
 arcpy.EditTin_3d(outMinTinNameFull, outAggFC+ " <None> <None> hardclip false", False)
-#arcpy.AddMessage("Clipped min surface TIN to Agg Boundary")
-#arcpy.AddMessage(" ")
+#logger("Clipped min surface TIN to Agg Boundary")
+#logger(" ")
 
 try:
 
@@ -432,17 +451,17 @@ try:
     # arcpy.ddd.AddSurfaceInformation(outAggFC, outMinTinNameFull, Prop)
     arcpy.ddd.AddSurfaceInformation(outAggFC, outMinTinNameFull, Prop, "LINEAR")
     
-    #arcpy.AddMessage("Completed adding TIN ZMin, ZMax surface information to " + str(outAggFC))
-    #arcpy.AddMessage(" ")
+    #logger("Completed adding TIN ZMin, ZMax surface information to " + str(outAggFC))
+    #logger(" ")
             
     #else:
-    #   arcpy.AddMessage("Aggregation FC does have Z! Exiting ...")
-    #   arcpy.AddMessage("")
+    #   logger("Aggregation FC does have Z! Exiting ...")
+    #   logger("")
     #   sys.exit()
 
 except arcpy.ExecuteError:
-    arcpy.AddMessage("Error executing method!")
-    print arcpy.GetMessages()
+    logger("Error executing method!")
+    emptyLogBuffer()
     
 except:
     # Get the traceback object
@@ -455,7 +474,7 @@ except:
     # Return python error messages for script tool or Python Window
     arcpy.AddError(pymsg)
     arcpy.AddError(msgs)
-    arcpy.AddMessage(msgs)
+    logger(msgs)
 
 # outTINList.append(outTinNameFull)
 # outTINList.append(outTinNameFull) 
@@ -466,8 +485,8 @@ theFiles = glob.glob(inFolder+"/*.txt")
 count = 0
 processVol = False
 
-#arcpy.AddMessage("Before the File Loop")
-#print arcpy.GetMessages()
+#logger("Before the File Loop")
+# emptyLogBuffer()
 
 # Loop through all the Text Files
 for i in theFiles:
@@ -479,18 +498,18 @@ for i in theFiles:
     inTXTfull = str(i).replace("\\","/")  
     inTXT = os.path.split(inTXTfull)[1]
     inPath = os.path.split(inTXTfull)[0]
-    # arcpy.AddMessage("Input Path is: " + inPath)
+    # logger("Input Path is: " + inPath)
      
-    arcpy.AddMessage("Input Text File is: " + inTXTfull)
-    arcpy.AddMessage(" ")
+    logger("Input Text File is: " + inTXTfull)
+    logger(" ")
     
     noextName = str(inTXT[:-4])
     result = re.split("\_", noextName)
-    # arcpy.AddMessage("Split on all underscores result is " + str(result))
+    # logger("Split on all underscores result is " + str(result))
     result2 = re.split("\_", noextName, 1)
-    # arcpy.AddMessage("Split on first underscore result is " + str(result2))
+    # logger("Split on first underscore result is " + str(result2))
     siteNUM = result[0]
-    # arcpy.AddMessage("Site Number is " + siteNUM)
+    # logger("Site Number is " + siteNUM)
     #if len(siteNUM) == 1:
     #    siteNUM = "00" + siteNUM
     #elif len(siteNUM) == 2:
@@ -499,27 +518,27 @@ for i in theFiles:
     siteDATE = result[1]
     siteYR = siteDATE[:2]
     siteMthDay = siteDATE[2:6]
-    # arcpy.AddMessage("Date is " + siteDATE)
-    # arcpy.AddMessage("YR is " + siteYR)
-    # arcpy.AddMessage("MTH(2 digits) DAY(2 digits) is " + siteMthDay)
+    # logger("Date is " + siteDATE)
+    # logger("YR is " + siteYR)
+    # logger("MTH(2 digits) DAY(2 digits) is " + siteMthDay)
     if int(siteYR) > int(cur2digitYR):
-        # arcpy.AddMessage("Site YR is > than Current YR so add 1900")
+        # logger("Site YR is > than Current YR so add 1900")
         siteYR = int(siteYR) + 1900
-        # arcpy.AddMessage("Site YR is now = " + str(siteYR))
+        # logger("Site YR is now = " + str(siteYR))
     else:
-        # arcpy.AddMessage("Site YR is <=  Current YR so add 2000")
+        # logger("Site YR is <=  Current YR so add 2000")
         siteYR = int(siteYR) + 2000
-        # arcpy.AddMessage("Site YR is now = " + str(siteYR))
+        # logger("Site YR is now = " + str(siteYR))
 
     siteFULLDATE = str(siteYR) + str(siteMthDay)
         
-    # arcpy.AddMessage("Date is " + siteDATE)
+    # logger("Date is " + siteDATE)
     siteNOTE = result[2]
-    # arcpy.AddMessage("Note is " + siteNOTE)
+    # logger("Note is " + siteNOTE)
 
     # outRasterName = "SE" + "_" + siteDATE
     outTinName = "surf_" + inSite.lower() + "_" + siteFULLDATE
-    #arcpy.AddMessage("TIN name lowercase = " + str(outTinName))
+    #logger("TIN name lowercase = " + str(outTinName))
     outTinNameFull = (outPath + outTinName)
 
     # out_fgdb = (outPath + "/" + siteNUM + inSide + ".gdb")
@@ -558,15 +577,15 @@ for i in theFiles:
             fileHandle.writelines(outFileLinesList)
             fileHandle.close()
 
-    #arcpy.AddMessage("Finished input file check!")
-    # arcpy.AddMessage(" ")
+    #logger("Finished input file check!")
+    # logger(" ")
 
     # Process: Create Feature Class...
     # arcpy.CreateFeatureclass_management(out_path, out_name, geometry_type, template, has_m, has_z, spatial_reference,
     # config_keyword, spatial_grid_1, spatial_grid_2, spatial_grid_3)
 
     arcpy.CreateFeatureclass_management(out_fgdb, shortFCName, "POINT", "", "DISABLED", "ENABLED", spatialRef)
-    # arcpy.AddMessage("Created FeatureClass " + str(shortFCName))0
+    # logger("Created FeatureClass " + str(shortFCName))0
 
     # Open an insert cursor for the new feature class
     cur = arcpy.InsertCursor(outFCNameFull)
@@ -578,7 +597,7 @@ for i in theFiles:
     for line in fileinput.input(inTXTfull): # Open the input file
         # set the point's ID, X and Y properties
         pnt.ID, pnt.X, pnt.Y, pnt.Z = string.split(line," ")
-        # arcpy.AddMessage("ID,X,Y,Z = " + str(pnt.ID) + ", " + str(pnt.X) + ", " + str(pnt.Y) + ", " + str(pnt.Z))
+        # logger("ID,X,Y,Z = " + str(pnt.ID) + ", " + str(pnt.X) + ", " + str(pnt.Y) + ", " + str(pnt.Z))
     
         # Create a new row or feature, in the feature class
         feat = cur.newRow()
@@ -590,7 +609,7 @@ for i in theFiles:
     fileinput.close()
     del cur
   
-    # arcpy.AddMessage("Created XYZ Point Feature Class: " + outFCNameFull)
+    # logger("Created XYZ Point Feature Class: " + outFCNameFull)
 
     # Append the point FC name to the delete list
     outPointFCList.append(outFCNameFull)
@@ -611,14 +630,14 @@ for i in theFiles:
   
     #Calculate the XY Coordinates
     arcpy.AddXY_management(outFCNameFull)
-    # arcpy.AddMessage("Added XYZ Coordinates to " + outFCNameFull)
+    # logger("Added XYZ Coordinates to " + outFCNameFull)
 
     #arcpy.CalculateField_management (in_table, field, expression, {expression_type}, {code_block})
     expr = "round(!POINT_Z!, 3)"
     arcpy.CalculateField_management(outFCNameFull, InField, expr, "PYTHON")
-    # arcpy.AddMessage("Rounded POINT_Z field!")
+    # logger("Rounded POINT_Z field!")
 
-    # arcpy.AddMessage("Before Conditional Statement, CREATE TIN boolean variable is " + blnCreateTIN)
+    # logger("Before Conditional Statement, CREATE TIN boolean variable is " + blnCreateTIN)
     # Some functions don't work without setting a workspace!
     # arcpy.env.Workspace = out_fgdb
 
@@ -630,14 +649,14 @@ for i in theFiles:
     
     try:
         # Execute CreateTin
-        # arcpy.AddMessage("Creating TIN dataset " + str(outTinName))
+        # logger("Creating TIN dataset " + str(outTinName))
         arcpy.CreateTin_3d(outTinNameFull, spatialRef, str(outFCNameFull)+ " Shape.Z masspoints", False)
-        # arcpy.AddMessage("Finished creating TIN " + outTinNameFull)
+        # logger("Finished creating TIN " + outTinNameFull)
 
         # Clip the TIN to the Aggregation Boundary
         arcpy.EditTin_3d(outTinNameFull, outAggSurveyFC+ " <None> <None> hardclip false", False)
-        #arcpy.AddMessage("Clipped TIN surface to Agg Boundary")
-        #arcpy.AddMessage(" ")
+        #logger("Clipped TIN surface to Agg Boundary")
+        #logger(" ")
 
         # Build name to copy the site channel and eddy  boundary
         chanBndy = (outFGDBPath + "chanBndy_" + inSite.lower() + "_" + siteFULLDATE)
@@ -661,8 +680,8 @@ for i in theFiles:
         resultChan = int(arcpy.GetCount_management(chanIntBndy).getOutput(0))
         
         if (resultChan > 0):
-            # arcpy.AddMessage("Channel intersection is not NULL!")
-            # arcpy.AddMessage(" ")
+            # logger("Channel intersection is not NULL!")
+            # logger(" ")
             processChanVol = True
 
             # Copy the channel intersection boundary
@@ -679,8 +698,8 @@ for i in theFiles:
             # Clip the TIN surface to the channel and survey intersection boundary
             # arcpy.EditTin_3d(chanCopyFullName, chBndy+ " <None> <None> hardclip false", False)
             arcpy.EditTin_3d(chanTinCopyFullName, chanIntBndy+ " <None> <None> hardclip false", False)
-            # arcpy.AddMessage("Clipped minsurface TINto Channel Boundary")
-            # arcpy.AddMessage("")
+            # logger("Clipped minsurface TINto Channel Boundary")
+            # logger("")
 
             # Create min surface TIN Copy Name for the minchan surface
             # outTinCopy = "minchan" + inSite.lower() + "_" + minSurfDateRange
@@ -689,18 +708,18 @@ for i in theFiles:
 
             # Execute CopyTin for Channel TIN Copy
             arcpy.CopyTin_3d(outMinTinNameFull, outMinTinChanCopyFull, "CURRENT")
-            # arcpy.AddMessage("Copied TIN " + outTinNameFull + " to " + outTinChanCopyFull)
-            # arcpy.AddMessage("")
+            # logger("Copied TIN " + outTinNameFull + " to " + outTinChanCopyFull)
+            # logger("")
 
             # Clip the min surface TIN to the channel boundary
             arcpy.EditTin_3d(outMinTinChanCopyFull, chanIntBndy+ " <None> <None> hardclip false", False)
-            # arcpy.AddMessage("Clipped min surface TIN copy to Channel Boundary")
-            # arcpy.AddMessage(" ")
+            # logger("Clipped min surface TIN copy to Channel Boundary")
+            # logger(" ")
 
             # Execute AddSurfaceInformation to survey channel boundary
             arcpy.ddd.AddSurfaceInformation(chanIntBndy, outTinNameFull, Prop)
-            # arcpy.AddMessage("Completed adding surface ZMin, ZMax information to Intersected Channel Boundary")
-            # arcpy.AddMessage("")
+            # logger("Completed adding surface ZMin, ZMax information to Intersected Channel Boundary")
+            # logger("")
 
             # Execute AddSurfaceInformation to minsurface channel boundary attach minsurface Zmin and Zmax
             arcpy.ddd.AddSurfaceInformation(minchanIntBndy, outMinTinChanCopyFull, Prop)         
@@ -711,8 +730,8 @@ for i in theFiles:
             processChanVol = False
             if arcpy.Exists(chanIntBndy):
                 arcpy.Delete_management(chanIntBndy)
-                # arcpy.AddMessage("Deleted " + str(chanIntBndy))
-                # arcpy.AddMessage("")           
+                # logger("Deleted " + str(chanIntBndy))
+                # logger("")           
 
         # Get inputs for intersection of AggBoundary and Eddy boundary
         inEddyFeatures = [outAggSurveyFC, eddyBndy]
@@ -725,8 +744,8 @@ for i in theFiles:
         resultEddy = int(arcpy.GetCount_management(eddyIntBndy).getOutput(0))
         
         if (resultEddy > 0):
-            # arcpy.AddMessage("Eddy intersection is not NULL!")
-            # arcpy.AddMessage(" ")
+            # logger("Eddy intersection is not NULL!")
+            # logger(" ")
             processEddyVol = True
 
             # Copy the eddy intersection boundary to attach minsurface Zmin and Zmax
@@ -739,14 +758,14 @@ for i in theFiles:
 
             # Execute CopyTin for Eddy TIN Copy
             arcpy.CopyTin_3d(outTinNameFull, eddyCopyFullName, "CURRENT")
-            # arcpy.AddMessage("Copied TIN " + outTinNameFull + " to " + eddyCopyFullName)
-            # arcpy.AddMessage("")
+            # logger("Copied TIN " + outTinNameFull + " to " + eddyCopyFullName)
+            # logger("")
 
             # Clip the TIN to the eddy intersection boundary
             # arcpy.EditTin_3d(eddyCopyFullName, edBndy+ " <None> <None> hardclip false", False)
             arcpy.EditTin_3d(eddyCopyFullName, eddyIntBndy+ " <None> <None> hardclip false", False)
-            #arcpy.AddMessage("Clipped TIN surface to Eddy Boundary")
-            #arcpy.AddMessage("")
+            #logger("Clipped TIN surface to Eddy Boundary")
+            #logger("")
 
             # Create minsurface TIN Copy Name
             # outTinCopy = "mineddy" + inSite.lower() + "_" + minSurfDateRange
@@ -755,25 +774,25 @@ for i in theFiles:
 
             # Execute CopyTin for Eddy TIN Copy
             arcpy.CopyTin_3d(outMinTinNameFull, outMinTinEddyCopyFull, "CURRENT")
-            # arcpy.AddMessage("Copied TIN " + outTinNameFull + " to " + outTinEddyCopyFull)
-            # arcpy.AddMessage("")
+            # logger("Copied TIN " + outTinNameFull + " to " + outTinEddyCopyFull)
+            # logger("")
 
             # Clip the min surface TIN to the intersection of the survey and eddy boundary
             arcpy.EditTin_3d(outMinTinEddyCopyFull, eddyIntBndy+ " <None> <None> hardclip false", False)
-            #arcpy.AddMessage("Clipped min surface TIN copy to Eddy Boundary")
-            #arcpy.AddMessage(" ")
+            #logger("Clipped min surface TIN copy to Eddy Boundary")
+            #logger(" ")
 
             # Execute AddSurfaceInformation     
             arcpy.ddd.AddSurfaceInformation(eddyIntBndy, outTinNameFull, Prop)        
-            # arcpy.AddMessage("Completed adding surface ZMin, ZMax information to Intersected Eddy Boundary")
-            # arcpy.AddMessage("")
+            # logger("Completed adding surface ZMin, ZMax information to Intersected Eddy Boundary")
+            # logger("")
 
             # Execute AddSurfaceInformation to minsurface channel boundary
             #===================================================================================================
             arcpy.ddd.AddSurfaceInformation(mineddyIntBndy, outMinTinEddyCopyFull, Prop)
             #===================================================================================================
-            # arcpy.AddMessage("Completed adding surface ZMin, ZMax information to Intersected Channel Boundary")
-            # arcpy.AddMessage("")www.msn.com
+            # logger("Completed adding surface ZMin, ZMax information to Intersected Channel Boundary")
+            # logger("")www.msn.com
             
             
         else:
@@ -781,8 +800,8 @@ for i in theFiles:
             processEddyVol = False
             if arcpy.Exists(eddyIntBndy):
                 arcpy.Delete_management(eddyIntBndy)
-                # arcpy.AddMessage("Deleted " + str(eddyIntBndy))
-                # arcpy.AddMessage("")
+                # logger("Deleted " + str(eddyIntBndy))
+                # logger("")
         
 
         # +++++++++++++++++++++++++++++++++++++++
@@ -797,8 +816,8 @@ for i in theFiles:
         # arcpy.CheckInExtension("3D")
     
     except arcpy.ExecuteError:
-        arcpy.AddMessage("Error executing method!")
-        print arcpy.GetMessages()
+        logger("Error executing method!")
+        emptyLogBuffer()
     except:
         # Get the traceback object
         tb = sys.exc_info()[2]
@@ -810,7 +829,7 @@ for i in theFiles:
         # Return python error messages for script tool or Python Window
         arcpy.AddError(pymsg)
         arcpy.AddError(msgs)
-        arcpy.AddMessage(msgs)
+        logger(msgs)
 
 
     field1 = "Z_MAX"
@@ -822,19 +841,19 @@ for i in theFiles:
             with arcpy.da.SearchCursor(chanIntBndy, (field1,field2)) as cursor:
                 for row in cursor:
                     ZmaxTIN = row[0]
-                    #arcpy.AddMessage("TIN Z_MAX = " + str(ZmaxTIN))
+                    #logger("TIN Z_MAX = " + str(ZmaxTIN))
                     ZminTIN = row[1]
-                    #arcpy.AddMessage("TIN Z_MIN = " + str(ZminTIN))
-                    #arcpy.AddMessage(" ")
+                    #logger("TIN Z_MIN = " + str(ZminTIN))
+                    #logger(" ")
                     if ((ZmaxTIN <= 0) or (ZminTIN <= 0)):
-                        arcpy.AddMessage("Cannot get boundary values from " + chanIntBndy + ". Skipping volume calculation!")
-                        arcpy.AddMessage(" ")
+                        logger("Cannot get boundary values from " + chanIntBndy + ". Skipping volume calculation!")
+                        logger(" ")
                         processChanVol = False
                     else:
                         processChanVol = True 
              
     except:
-        print arcpy.GetMessages()
+        emptyLogBuffer()
 
     if (processChanVol == True):
         # Need to avoid putting output volume files in Geodatabases!
@@ -845,94 +864,94 @@ for i in theFiles:
         minChanFile = str(outRoot + "/vol_" + "minchan_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(minChanFile):
             arcpy.Delete_management(minChanFile)
-            arcpy.AddMessage("Deleted " + str(minChanFile))
-            arcpy.AddMessage(" ")
+            logger("Deleted " + str(minChanFile))
+            logger(" ")
 
         # minChanBndy = (outFGDBPath + "minChanBndy")
         
-        arcpy.AddMessage("Calculating volume for minchan_" + inSite.lower() + "_" + siteFULLDATE + "...")    
+        logger("Calculating volume for minchan_" + inSite.lower() + "_" + siteFULLDATE + "...")    
         volCalcOK = calcVolume(minchanIntBndy, minChanFile, wsl_8k, outMinTinChanCopyFull, fltBinSize, False)
-        # arcpy.AddMessage("Return value from volume calculation =  " + str(volCalcOK))
+        # logger("Return value from volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed minchan_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed minchan_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in minchan_" + inSite.lower() + + "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in minchan_" + inSite.lower() + + "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of minimum surface channel above 8k
         minChanAbove8kFile = str(outRoot + "/vol_" + "minchanAbove8k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(minChanAbove8kFile):
             arcpy.Delete_management(minChanAbove8kFile)
-            arcpy.AddMessage("Deleted " + str(minChanAbove8kFile))
+            logger("Deleted " + str(minChanAbove8kFile))
             
-        arcpy.AddMessage("Calculating volume for minchanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for minchanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(minchanIntBndy, minChanAbove8kFile, wsl_8k, outMinTinChanCopyFull, fltBinSize, True)
-        # arcpy.AddMessage("Return value from minsurface chan volume calculation =  " + str(volCalcOK))
+        # logger("Return value from minsurface chan volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed minchanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed minchanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in minchanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in minchanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of minimum surface chan above 25k
         minChanAbove25kFile = str(outRoot + "/vol_" + "minchanAbove25k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(minChanAbove25kFile):
             arcpy.Delete_management(minChanAbove25kFile)
-            arcpy.AddMessage("Deleted " + str(minChanAbove25kFile))
+            logger("Deleted " + str(minChanAbove25kFile))
             
-        arcpy.AddMessage("Calculating volume for minchanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for minchanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(minchanIntBndy, minChanAbove25kFile, wsl_25k, outMinTinChanCopyFull, fltBinSize, True)
-        #arcpy.AddMessage("Return value from minsurface channel volume calculation =  " + str(volCalcOK))
+        #logger("Return value from minsurface channel volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed minchanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
-            arcpy.AddMessage(" ")
+            logger("Completed minchanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in minchanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in minchanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of survey channel above 8k
         chanAbove8kFile = str(outRoot + "/vol_" + "chanAbove8k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(chanAbove8kFile):
             arcpy.Delete_management(chanAbove8kFile)
-            arcpy.AddMessage("Deleted " + str(chanAbove8kFile))
+            logger("Deleted " + str(chanAbove8kFile))
             
-        arcpy.AddMessage("Calculating volume for chanAbove8k_" + inSite.lower() + "_" + siteFULLDATE + "...")
+        logger("Calculating volume for chanAbove8k_" + inSite.lower() + "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(chanIntBndy, chanAbove8kFile, wsl_8k, chanTinCopyFullName, fltBinSize, True)
-        # arcpy.AddMessage("Return value from volume calculation =  " + str(volCalcOK))
+        # logger("Return value from volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed chanAbove8k_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed chanAbove8k_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in chanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in chanAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of survey channel above 25k
         chanAbove25kFile = str(outRoot + "/vol_" + "chanAbove25k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(chanAbove25kFile):
             arcpy.Delete_management(chanAbove25kFile)
-            arcpy.AddMessage("Deleted " + str(chanAbove25kFile))
+            logger("Deleted " + str(chanAbove25kFile))
             
-        arcpy.AddMessage("Calculating volume for chanAbove25kFile_" + inSite.lower() + "_" + siteFULLDATE + "...")
+        logger("Calculating volume for chanAbove25kFile_" + inSite.lower() + "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(chanIntBndy, chanAbove25kFile, wsl_25k, chanTinCopyFullName, fltBinSize, True)
-        # arcpy.AddMessage("Return value from volume calculation =  " + str(volCalcOK))
+        # logger("Return value from volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed chanAbove25k_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed chanAbove25k_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in chanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in chanAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
         
         # Calculate Volume of eddy from Zmin to Zmax
         chanfromMinFile = str(outRoot + "/vol_" + "chanfrommin_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(chanfromMinFile):
             arcpy.Delete_management(chanfromMinFile)
-            arcpy.AddMessage("Deleted " + str(chanfromMinFile))
+            logger("Deleted " + str(chanfromMinFile))
             
-        arcpy.AddMessage("Calculating volume for chanfromMin_" + inSite.lower() + "_" + siteFULLDATE + "...")
+        logger("Calculating volume for chanfromMin_" + inSite.lower() + "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(chanIntBndy, chanfromMinFile, wsl_8k, chanTinCopyFullName, fltBinSize, False)
-        # arcpy.AddMessage("Return value from eddy above 8k volume calculation =  " + str(volCalcOK))
+        # logger("Return value from eddy above 8k volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed chanfrommin_" + inSite.lower() + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed chanfrommin_" + inSite.lower() + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in chanfrommin_" + inSite.lower() + " volume calculation!")
+            logger("Error in chanfrommin_" + inSite.lower() + " volume calculation!")
 
         # New addition for calculation of channel from the minimum to 8K (Feb 11, 2014)
         # ==============================================================================
@@ -1012,7 +1031,7 @@ for i in theFiles:
         binVol = str(outRoot + "/binvol_" + "chanminto8k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(binVol):
             arcpy.Delete_management(binVol)
-            arcpy.AddMessage("Deleted " + str(binVol))
+            logger("Deleted " + str(binVol))
         # headers = ['Site', 'Date', 'Area_2D', 'Area_3D', 'Volume']
         data = ['Site', 'Date', 'Plane_Height', 'Area_2D', 'Area_3D', 'Volume']
         #volHeaders = ['Dataset', 'Plane_Height', 'Reference', 'Z_Factor', 'Area_2D', 'Area_3D', 'Volume']
@@ -1031,7 +1050,7 @@ for i in theFiles:
             with open(minChanFile) as f3:        
                 num_minsurf_lines = sum(1 for line in f3)
             
-        arcpy.AddMessage("Number of Lines in Channel Survey = " + str(num_survey_lines) + ", Number of Lines in Channel MinSurface = " + str(num_minsurf_lines))
+        logger("Number of Lines in Channel Survey = " + str(num_survey_lines) + ", Number of Lines in Channel MinSurface = " + str(num_minsurf_lines))
         
         survey_count = 0
         min_count = 0
@@ -1042,7 +1061,7 @@ for i in theFiles:
         if (chanfromMinFileExists == True):            
             if (minChanFileExists == True):                
                 with open(chanfromMinFile, 'rb') as f41, open(minChanFile, 'rb') as f51, open(binVol, 'ab') as f81:
-                    # arcpy.AddMessage("Got past open file statement!")
+                    # logger("Got past open file statement!")
                     # Open csv readers
                     reader41 = csv.reader(f41, delimiter=',', quotechar='"')
                     reader51 = csv.reader(f51, delimiter=',', quotechar='"')
@@ -1088,9 +1107,9 @@ for i in theFiles:
                     
                     if (minWSL == surveyChanWSL):
                     
-                        arcpy.AddMessage("============================================================================")
-                        arcpy.AddMessage("Match!!! Minimum WSL = " + str(minWSL) + ", SurveyChannel WSL = " + str(surveyChanWSL))
-                        arcpy.AddMessage("============================================================================")
+                        logger("============================================================================")
+                        logger("Match!!! Minimum WSL = " + str(minWSL) + ", SurveyChannel WSL = " + str(surveyChanWSL))
+                        logger("============================================================================")
 
                         #minChanArea2D = float((minimumrow1[4]).strip('"'))
                         #minChanArea3D = float((minimumrow1[5]).strip('"'))
@@ -1149,7 +1168,7 @@ for i in theFiles:
         # =============================================================================================
         chanvol25k = float(vol25k) - float(minchanvol25k)
         # =============================================================================================
-        #arcpy.AddMessage("Channel volume above 25k = " + str(chanvol25k))
+        #logger("Channel volume above 25k = " + str(chanvol25k))
 
         # Here is the final computation of 8K to 25K bin volume, and area
         # ===============================================================
@@ -1161,7 +1180,7 @@ for i in theFiles:
         binVol = str(outRoot + "/binvol_" + "chan8kto25k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(binVol):
             arcpy.Delete_management(binVol)
-            arcpy.AddMessage("Deleted " + str(binVol))
+            logger("Deleted " + str(binVol))
         # headers = ['Site', 'Date', 'Area_2D', 'Area_3D', 'Volume']
         data = [['Site', 'Date', 'Plane_Height', 'Area_2D', 'Area_3D', 'Volume'], [str(inSite.lower()), str(siteFULLDATE), '8kto25k', str(chanarea2D8k), str(chanarea3D8k), str(chanvol8kto25k)]]
         #volHeaders = ['Dataset', 'Plane_Height', 'Reference', 'Z_Factor', 'Area_2D', 'Area_3D', 'Volume']
@@ -1178,7 +1197,7 @@ for i in theFiles:
             with open(minChanAbove8kFile) as f6:
                 num_minsurf_lines = sum(1 for line in f6)
                 
-        # arcpy.AddMessage("Number of Lines in Survey = " + str(num_survey_lines) + ", Number of Lines in MinSurface = " + str(num_minsurf_lines))
+        # logger("Number of Lines in Survey = " + str(num_survey_lines) + ", Number of Lines in MinSurface = " + str(num_minsurf_lines))
         survey_count = 0
         min_count = 0
         blnNoData = False
@@ -1207,19 +1226,19 @@ for i in theFiles:
                         surveyArea2D = float((surveyrow2[4]).strip('"'))
                         surveyArea3D = float((surveyrow2[5]).strip('"'))
                         surveyVol = float((surveyrow2[6]).strip('"'))
-                        # arcpy.AddMessage("In survey loop, NoData check in MinSurface = " + str(blnNoData))
-                        # arcpy.AddMessage("In survey loop, survey_count = " + str(survey_count))
+                        # logger("In survey loop, NoData check in MinSurface = " + str(blnNoData))
+                        # logger("In survey loop, survey_count = " + str(survey_count))
                 
                         #Get the WSL of the minSurface for the current line                
                         minWSL = float((minrow1[1]).strip('"'))
                 
                         if (minWSL == surveyWSL):
-                            #arcpy.AddMessage("Min Surface WSL = " + str(minWSL) + ", Survey WSL = " + str(surveyWSL))
+                            #logger("Min Surface WSL = " + str(minWSL) + ", Survey WSL = " + str(surveyWSL))
                             #minArea2D = float((minrow1[4]).strip('"'))
                             #minArea3D = float((minrow1[5]).strip('"'))
                             minVol = float((minrow1[6]).strip('"'))
                             # mindata = [float((minrow1[1]).strip('"')), float((minrow1[4]).strip('"')),float((minrow1[5]).strip('"')),float((minrow1[6]).strip('"'))]
-                            # arcpy.AddMessage("Data Row = " + str(mindata))
+                            # logger("Data Row = " + str(mindata))
                     
                             #output2D = surveyArea2D - minArea2D
                             output2D = surveyArea2D
@@ -1229,7 +1248,7 @@ for i in theFiles:
                         
                             outData = [str(inSite.lower()), str(siteFULLDATE), "above" + str(surveyWSL), str(output2D),  str(output3D), str(outputVol)]
                             writer2.writerow(outData)
-                            #arcpy.AddMessage("Output Data Row = " + str(outData))                        
+                            #logger("Output Data Row = " + str(outData))                        
                 
                         if min_count < num_minsurf_lines:
                             blnNoData = False
@@ -1241,9 +1260,9 @@ for i in theFiles:
                     
                         survey_count = survey_count + 1
 
-                    #arcpy.AddMessage("On exit of survey loop, NoData check in MinSurface = " + str(blnNoData))
-                    #arcpy.AddMessage("On exit of survey loop, survey_count = " + str(survey_count))
-                    #arcpy.AddMessage("On exit of survey loop, min_count = " + str(min_count))
+                    #logger("On exit of survey loop, NoData check in MinSurface = " + str(blnNoData))
+                    #logger("On exit of survey loop, survey_count = " + str(survey_count))
+                    #logger("On exit of survey loop, min_count = " + str(min_count))
         else:
             if arcpy.Exists(chanAbove8kFile):
                 with open(chanAbove8kFile, 'rb') as f5, open(binVol, 'ab') as f6:
@@ -1251,7 +1270,7 @@ for i in theFiles:
                     reader4 = csv.reader(f5, delimiter=',', quotechar='"')
             
                     surveyrow1 = next(reader4)
-                    #arcpy.AddMessage("Survey Row1 = " + str(surveyrow1))
+                    #logger("Survey Row1 = " + str(surveyrow1))
                     survey_count = survey_count + 1
 
                     for surveyrow2 in reader4:
@@ -1268,7 +1287,7 @@ for i in theFiles:
                         outputVol = surveyVol
                         outData = [str(inSite.lower()), str(siteFULLDATE), "above" + str(surveyWSL), str(output2D),  str(output3D), str(outputVol)]
                         writer2.writerow(outData)
-                        # arcpy.AddMessage("Output Data Row = " + str(outData))                        
+                        # logger("Output Data Row = " + str(outData))                        
                     
                         survey_count = survey_count + 1
                 
@@ -1279,24 +1298,24 @@ for i in theFiles:
             with arcpy.da.SearchCursor(eddyIntBndy, (field1,field2)) as cursor:
                 for row in cursor:
                     ZmaxTIN = row[0]
-                    #arcpy.AddMessage("TIN Z_MAX = " + str(ZmaxTIN))
+                    #logger("TIN Z_MAX = " + str(ZmaxTIN))
                     ZminTIN = row[1]
-                    #arcpy.AddMessage("TIN Z_MIN = " + str(ZminTIN))
-                    #arcpy.AddMessage(" ")
+                    #logger("TIN Z_MIN = " + str(ZminTIN))
+                    #logger(" ")
                     if ((ZmaxTIN <= 0) or (ZminTIN <= 0)):
-                        arcpy.AddMessage("Cannot get boundary values from " + eddyIntBndy + ". Skipping volume calculation!")
+                        logger("Cannot get boundary values from " + eddyIntBndy + ". Skipping volume calculation!")
                         processEddyVol = False
                     else:
                         processEddyVol = True 
              
     except:
-        print arcpy.GetMessages()
+        emptyLogBuffer()
 
     if (processEddyVol == True):
         # Need to avoid putting output volume files in Geodatabases!
         # txtFile = str(outRoot + "/vol_" + "eddy" + inSite.lower() + "_" + siteFULLDATE + ".txt")
-        # arcpy.AddMessage("VOLUME Text File is " + txtFile)
-        # arcpy.AddMessage("")
+        # logger("VOLUME Text File is " + txtFile)
+        # logger("")
 
         #minEddyBndy = (outFGDBPath + "minEddyBndy")
 
@@ -1304,91 +1323,91 @@ for i in theFiles:
         minEddyFile = str(outRoot + "/vol_" + "mineddy_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(minEddyFile):
             arcpy.Delete_management(minEddyFile)
-            arcpy.AddMessage("Deleted " + str(minEddyFile))
+            logger("Deleted " + str(minEddyFile))
 
-        arcpy.AddMessage("Calculating volume for mineddy_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for mineddy_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(mineddyIntBndy, minEddyFile, wsl_8k, outMinTinEddyCopyFull, fltBinSize, False)
-        # arcpy.AddMessage("Return value from minsurface eddy volume calculation =  " + str(volCalcOK))
+        # logger("Return value from minsurface eddy volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed mineddy_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed mineddy_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in mineddy_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in mineddy_" + inSite.lower() + "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of minimum surface eddy above 8k
         minEddyAbove8kFile = str(outRoot + "/vol_" + "mineddyAbove8k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(minEddyAbove8kFile):
             arcpy.Delete_management(minEddyAbove8kFile)
-            arcpy.AddMessage("Deleted " + str(minEddyAbove8kFile))
+            logger("Deleted " + str(minEddyAbove8kFile))
             
-        arcpy.AddMessage("Calculating volume for mineddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for mineddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(mineddyIntBndy, minEddyAbove8kFile, wsl_8k, outMinTinEddyCopyFull, fltBinSize, True)
-        # arcpy.AddMessage("Return value from minsurface eddy volume calculation =  " + str(volCalcOK))
+        # logger("Return value from minsurface eddy volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed mineddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed mineddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in mineddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in mineddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of minimum surface eddy above 25k
         minEddyAbove25kFile = str(outRoot + "/vol_" + "mineddyAbove25k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(minEddyAbove25kFile):
             arcpy.Delete_management(minEddyAbove25kFile)
-            arcpy.AddMessage("Deleted " + str(minEddyAbove25kFile))
+            logger("Deleted " + str(minEddyAbove25kFile))
             
-        arcpy.AddMessage("Calculating volume for mineddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for mineddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(mineddyIntBndy, minEddyAbove25kFile, wsl_25k, outMinTinEddyCopyFull, fltBinSize, True)
-        #arcpy.AddMessage("Return value from minsurface eddy volume calculation =  " + str(volCalcOK))
+        #logger("Return value from minsurface eddy volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed mineddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed mineddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in mineddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in mineddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of survey surface eddy from Zmin to Zmax 
         eddySurfFile = str(outRoot + "/vol_" + "eddyfrommin_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(eddySurfFile):
             arcpy.Delete_management(eddySurfFile)
-            arcpy.AddMessage("Deleted " + str(eddySurfFile))
+            logger("Deleted " + str(eddySurfFile))
             
-        arcpy.AddMessage("Calculating volume for eddyfrommin_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for eddyfrommin_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(eddyIntBndy, eddySurfFile, wsl_8k, eddyCopyFullName, fltBinSize, False)
-        # arcpy.AddMessage("Return value from eddy above 8k volume calculation =  " + str(volCalcOK))
+        # logger("Return value from eddy above 8k volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed eddyfrommin_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed eddyfrommin_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in eddyfrommin_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in eddyfrommin_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of survey surface eddy above 8k 
         eddyAbove8kFile = str(outRoot + "/vol_" + "eddyAbove8k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(eddyAbove8kFile):
             arcpy.Delete_management(eddyAbove8kFile)
-            arcpy.AddMessage("Deleted " + str(eddyAbove8kFile))
+            logger("Deleted " + str(eddyAbove8kFile))
             
-        arcpy.AddMessage("Calculating volume for eddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for eddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(eddyIntBndy, eddyAbove8kFile, wsl_8k, eddyCopyFullName, fltBinSize, True)
-        # arcpy.AddMessage("Return value from eddy above 8k volume calculation =  " + str(volCalcOK))
+        # logger("Return value from eddy above 8k volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed eddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed eddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in eddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in eddyAbove8k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # Calculate Volume of survey surface eddy above 25k 
         eddyAbove25kFile = str(outRoot + "/vol_" + "eddyAbove25k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(eddyAbove25kFile):
             arcpy.Delete_management(eddyAbove25kFile)
-            arcpy.AddMessage("Deleted " + str(eddyAbove25kFile))
+            logger("Deleted " + str(eddyAbove25kFile))
             
-        arcpy.AddMessage("Calculating volume for eddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
+        logger("Calculating volume for eddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + "...")
         volCalcOK = calcVolume(eddyIntBndy, eddyAbove25kFile, wsl_25k, eddyCopyFullName, fltBinSize, True)
-        # arcpy.AddMessage("Return value from eddy above 25k volume calculation =  " + str(volCalcOK))
+        # logger("Return value from eddy above 25k volume calculation =  " + str(volCalcOK))
         if volCalcOK == True:
-            arcpy.AddMessage("Completed eddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
-            arcpy.AddMessage(" ")
+            logger("Completed eddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation")
+            logger(" ")
         else:
-            arcpy.AddMessage("Error in eddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
+            logger("Error in eddyAbove25k_" + inSite.lower() +  "_" + siteFULLDATE + " volume calculation!")
 
         # ======================================================================================
         # New addition for calculation of eddy from min to 8K (Feb 11, 2014)
@@ -1487,7 +1506,7 @@ for i in theFiles:
         binVol = str(outRoot + "/binvol_" + "eddyminto8k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(binVol):
             arcpy.Delete_management(binVol)
-            arcpy.AddMessage("Deleted " + str(binVol))
+            logger("Deleted " + str(binVol))
         # headers = ['Site', 'Date', 'Area_2D', 'Area_3D', 'Volume']
         data = ['Site', 'Date', 'Plane_Height', 'Area_2D', 'Area_3D', 'Volume']
         #volHeaders = ['Dataset', 'Plane_Height', 'Reference', 'Z_Factor', 'Area_2D', 'Area_3D', 'Volume']
@@ -1506,7 +1525,7 @@ for i in theFiles:
             with open(minEddyFile) as f1:             
                 num_minsurf_lines = sum(1 for line in f1)
             
-        arcpy.AddMessage("Number of Lines in Survey = " + str(num_survey_lines) + ", Number of Lines in MinSurface = " + str(num_minsurf_lines))
+        logger("Number of Lines in Survey = " + str(num_survey_lines) + ", Number of Lines in MinSurface = " + str(num_minsurf_lines))
         
         survey_count = 0
         min_count = 0
@@ -1580,9 +1599,9 @@ for i in theFiles:
                             
                             if (minWSL == surveyEddyWSL):
 
-                                arcpy.AddMessage("============================================================================")
-                                arcpy.AddMessage("Match!!! Minimum WSL = " + str(minWSL) + ", SurveyEddy WSL = " + str(surveyEddyWSL))
-                                arcpy.AddMessage("============================================================================")
+                                logger("============================================================================")
+                                logger("Match!!! Minimum WSL = " + str(minWSL) + ", SurveyEddy WSL = " + str(surveyEddyWSL))
+                                logger("============================================================================")
 
                                 #minEddyArea2D = float((minimumrow1[4]).strip('"'))
                                 #minEddyArea3D = float((minimumrow1[5]).strip('"'))
@@ -1599,10 +1618,10 @@ for i in theFiles:
                                 minEddyAbove8KVol = float((minEddyAbove8Krow[6]).strip('"'))
 
                                 volEddyFromMinTo8K = (float(surveyEddyVol) - float(eddyAbove8KVol)) - (float(minEddyVol) - float(minEddyAbove8KVol))
-                                arcpy.AddMessage("SurveyEddyVol = " + str(surveyEddyVol))
-                                arcpy.AddMessage("EddyAbove8KVol = " + str(eddyAbove8KVol))
-                                arcpy.AddMessage("minEddyVol = " + str(minEddyVol))
-                                arcpy.AddMessage("minEddyAbove8KVol = " + str(minEddyAbove8KVol))
+                                logger("SurveyEddyVol = " + str(surveyEddyVol))
+                                logger("EddyAbove8KVol = " + str(eddyAbove8KVol))
+                                logger("minEddyVol = " + str(minEddyVol))
+                                logger("minEddyAbove8KVol = " + str(minEddyAbove8KVol))
                                 area2DEddyFromMinto8K = float(surveyEddyArea2D) - float(eddyAbove8KArea2D)
                                 area3DEddyFromMinto8K = float(surveyEddyArea3D) -  float(eddyAbove8KArea3D)
 
@@ -1677,7 +1696,7 @@ for i in theFiles:
         binVol = str(outRoot + "/binvol_" + "eddyabove25k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(binVol):
             arcpy.Delete_management(binVol)
-            arcpy.AddMessage("Deleted " + str(binVol))
+            logger("Deleted " + str(binVol))
         # headers = ['Site', 'Date', 'Area_2D', 'Area_3D', 'Volume']
         data = [['Site', 'Date', 'Plane_Height', 'Area_2D', 'Area_3D', 'Volume'], [str(inSite.lower()), str(siteFULLDATE), 'above25k', str(eddyArea2DAbove25K), str(eddyArea3DAbove25K), str(eddyvol25k)]]
         #volHeaders = ['Dataset', 'Plane_Height', 'Reference', 'Z_Factor', 'Area_2D', 'Area_3D', 'Volume']
@@ -1697,7 +1716,7 @@ for i in theFiles:
         binVol = str(outRoot + "/binvol_" + "eddy8kto25k_" + inSite.lower() + "_" + siteFULLDATE + ".txt")
         if arcpy.Exists(binVol):
             arcpy.Delete_management(binVol)
-            arcpy.AddMessage("Deleted " + str(binVol))
+            logger("Deleted " + str(binVol))
         # headers = ['Site', 'Date', 'Area_2D', 'Area_3D', 'Volume']
         data = [['Site', 'Date', 'Plane_Height', 'Area_2D', 'Area_3D', 'Volume'], [str(inSite.lower()), str(siteFULLDATE), '8kto25k', str(area2D8kto25k), str(area3D8kto25k), str(finalVol8Kto25K)]]
         #volHeaders = ['Dataset', 'Plane_Height', 'Reference', 'Z_Factor', 'Area_2D', 'Area_3D', 'Volume']
@@ -1711,7 +1730,7 @@ for i in theFiles:
             num_survey_lines = sum(1 for line in open(eddyAbove8kFile))
         if arcpy.Exists(minEddyAbove8kFile):
             num_minsurf_lines = sum(1 for line in open(minEddyAbove8kFile))
-        # arcpy.AddMessage("Number of Lines in Survey = " + str(num_survey_lines) + ", Number of Lines in MinSurface = " + str(num_minsurf_lines))
+        # logger("Number of Lines in Survey = " + str(num_survey_lines) + ", Number of Lines in MinSurface = " + str(num_minsurf_lines))
         survey_count = 0
         min_count = 0
         blnNoData = False
@@ -1725,13 +1744,13 @@ for i in theFiles:
             
                     # Skip the header row of the Minimum Surface
                     minrow1 = next(reader3)
-                    #arcpy.AddMessage("MinSurface HeaderRow = " + str(minrow1))
+                    #logger("MinSurface HeaderRow = " + str(minrow1))
                     min_count = min_count + 1
                     minrow1 = next(reader3)
                     min_count = min_count + 1
             
                     surveyrow1 = next(reader4)
-                    #arcpy.AddMessage("Survey Row1 = " + str(surveyrow1))
+                    #logger("Survey Row1 = " + str(surveyrow1))
                     survey_count = survey_count + 1
             
                     for surveyrow2 in reader4:
@@ -1739,19 +1758,19 @@ for i in theFiles:
                         surveyArea2D = float((surveyrow2[4]).strip('"'))
                         surveyArea3D = float((surveyrow2[5]).strip('"'))
                         surveyVol = float((surveyrow2[6]).strip('"'))
-                        # arcpy.AddMessage("In survey loop, NoData check in MinSurface = " + str(blnNoData))
-                        # arcpy.AddMessage("In survey loop, survey_count = " + str(survey_count))
+                        # logger("In survey loop, NoData check in MinSurface = " + str(blnNoData))
+                        # logger("In survey loop, survey_count = " + str(survey_count))
                 
                         #Get the WSL of the minSurface for the current line                
                         minWSL = float((minrow1[1]).strip('"'))
                 
                         if (minWSL == surveyWSL):
-                            #arcpy.AddMessage("Min Surface WSL = " + str(minWSL) + ", Survey WSL = " + str(surveyWSL))
+                            #logger("Min Surface WSL = " + str(minWSL) + ", Survey WSL = " + str(surveyWSL))
                             # minArea2D = float((minrow1[4]).strip('"'))
                             # minArea3D = float((minrow1[5]).strip('"'))
                             minVol = float((minrow1[6]).strip('"'))
                             # mindata = [float((minrow1[1]).strip('"')), float((minrow1[4]).strip('"')),float((minrow1[5]).strip('"')),float((minrow1[6]).strip('"'))]
-                            # arcpy.AddMessage("Data Row = " + str(mindata))
+                            # logger("Data Row = " + str(mindata))
                             #result = numpy.array(mindata).astype('float')
                             #numpy.savetxt(numpyTXT, result, delimiter=',')
                             #===================================================================
@@ -1763,7 +1782,7 @@ for i in theFiles:
                             #===================================================================
                             outData = [str(inSite.lower()), str(siteFULLDATE), ("above" + str(surveyWSL)), str(output2D),  str(output3D), str(outputVol)]
                             writer2.writerow(outData)
-                            #arcpy.AddMessage("Output Data Row = " + str(outData))                        
+                            #logger("Output Data Row = " + str(outData))                        
                 
                         if min_count < num_minsurf_lines:
                             blnNoData = False
@@ -1775,9 +1794,9 @@ for i in theFiles:
                     
                         survey_count = survey_count + 1
 
-                    #arcpy.AddMessage("On exit of survey loop, NoData check in MinSurface = " + str(blnNoData))
-                    #arcpy.AddMessage("On exit of survey loop, survey_count = " + str(survey_count))
-                    #arcpy.AddMessage("On exit of survey loop, min_count = " + str(min_count))
+                    #logger("On exit of survey loop, NoData check in MinSurface = " + str(blnNoData))
+                    #logger("On exit of survey loop, survey_count = " + str(survey_count))
+                    #logger("On exit of survey loop, min_count = " + str(min_count))
         else:
             if arcpy.Exists(eddyAbove8kFile):
                 with open(eddyAbove8kFile, 'rb') as f5, open(binVol, 'ab') as f6:
@@ -1785,7 +1804,7 @@ for i in theFiles:
                     reader4 = csv.reader(f5, delimiter=',', quotechar='"')
                 
                     surveyrow1 = next(reader4)
-                    #arcpy.AddMessage("Survey Row1 = " + str(surveyrow1))
+                    #logger("Survey Row1 = " + str(surveyrow1))
                     survey_count = survey_count + 1
 
                     for surveyrow2 in reader4:
@@ -1803,42 +1822,42 @@ for i in theFiles:
                         outputVol = surveyVol
                         outData = [str(inSite.lower()), str(siteFULLDATE), ("above" + str(surveyWSL)), str(output2D),  str(output3D), str(outputVol)]
                         writer2.writerow(outData)
-                        #arcpy.AddMessage("Output Data Row = " + str(outData))
+                        #logger("Output Data Row = " + str(outData))
                         survey_count = survey_count + 1
 
     # loop counter
     count = count + 1
-    arcpy.AddMessage(str(count)+ " Text Files Processed")
+    logger(str(count)+ " Text Files Processed")
     
 #for outTIN in outTINList:
-#    arcpy.AddMessage("TIN Name = " + str(outTIN))
+#    logger("TIN Name = " + str(outTIN))
 
 #outTINList.sort(key=alphanum_key)
-#arcpy.AddMessage("Sorted TIN List")
+#logger("Sorted TIN List")
 
 #for outTIN in outTINList:
-#    arcpy.AddMessage("Sorted TIN Name = " + str(outTIN))
+#    logger("Sorted TIN Name = " + str(outTIN))
 
 if blnDeletePointFC == "true":
-    arcpy.AddMessage("Delete PointFC Checkbox is true")
+    logger("Delete PointFC Checkbox is true")
     for ptfc in outPointFCList:
-        # arcpy.AddMessage("File Name is!" + str(ptfc))
+        # logger("File Name is!" + str(ptfc))
         if arcpy.Exists(ptfc):
             arcpy.Delete_management(ptfc)
-            arcpy.AddMessage("Deleted " + str(ptfc))
+            logger("Deleted " + str(ptfc))
 # else:
-# arcpy.AddMessage("Checkbox is false")
+# logger("Checkbox is false")
 
 if blnDeleteAggBoundary == "true":
-    arcpy.AddMessage("Delete AggBoundary Checkbox is true")
+    logger("Delete AggBoundary Checkbox is true")
     for bndfc in aggPointFCList:
-        # arcpy.AddMessage("File Name is!" + str(bndfc))
+        # logger("File Name is!" + str(bndfc))
         if arcpy.Exists(bndfc):
             arcpy.Delete_management(bndfc)
-            arcpy.AddMessage("Deleted " + str(bndfc))
+            logger("Deleted " + str(bndfc))
       
 # else:
-# arcpy.AddMessage("Checkbox is false")
+# logger("Checkbox is false")
 
 # Check in the ArcGIS Spatial Analyst extension license
 arcpy.CheckInExtension("Spatial")
@@ -1846,4 +1865,4 @@ arcpy.CheckInExtension("Spatial")
 # Check in the ArcGIS 3D Analyst extension
 arcpy.CheckInExtension("3D")
 
-print(arcpy.GetMessages())
+emptyLogBuffer()
