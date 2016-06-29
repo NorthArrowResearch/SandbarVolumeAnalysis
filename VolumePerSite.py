@@ -52,10 +52,17 @@ def twodigityr_fourdigityr(inYr, nowYr):
         return (int(inYr) + 2000)
 
 def logger(msg):
+    """ Log a string
+
+    Strings will be added to arc message buffer as well as the log
+    buffer that goes to the log file
+    """
     arcpy.AddMessage(msg)
     logBuffer.append(msg)
 
 def emptyLogBuffer():
+    """ Print the log buffer to a string and to the logfile
+    """
     print arcpy.GetMessages()
     # Append logs to log file
     with open(logFile, "a") as logfile:
